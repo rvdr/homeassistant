@@ -1,0 +1,182 @@
+# This automation simulates the use of the IKEA STYRBAR Remote control
+# connected through Zigbee2MQTT.
+
+# Button	Duration	Action
+# Dim-Up	short	Turn on
+# Dim-Down	short	Turn off
+# Dim-Up	long	Increase brightness
+# Dim-Down	long	Decrease brightness
+# Right	long	Increase temperature
+# Left	long	Decrease temperature
+# Right	long	Change Lamp
+# Left	long	Change Lamp
+
+blueprint:
+
+  name: Z2M - IKEA STYRBAR - Multiple White Lights
+
+  description: >-
+    This automation simulates the use of the IKEA STYRBAR Remote control
+    connected through Zigbee2MQTT.
+  domain: automation
+
+  input:
+    remote_entity:
+      name: Remote Sensor Entity
+      description: The sensor entity created by Zigbee2MQTT
+      selector:
+        entity:
+          domain: sensor
+
+    speed:
+      name: Speed
+      description: The speed in which to update the light when the button is held.
+      selector:
+        number:
+          min: 100
+          max: 1000
+          step: 100
+          unit_of_measurement: milliseconds
+          mode: slider
+      default: 500
+
+variables:
+  var_speed: !input speed
+  var_light: '{{ states.input_select.rotation.state }}'
+
+trigger:
+  - platform: state
+    entity_id: !input remote_entity
+    to:
+      - "on"  #Short Press brightness UP
+      - "off" #Short Press brightness DOWN
+      - "brightness_move_up" #Long Press brightness UP
+      - "brightness_move_down" #Long Press brightness DOWN
+      - "brightness_stop" #LONG press on brighness (up or down) is released
+      - "arrow_left_hold" #Long Press Left arrow button
+      - "arrow_right_hold" #Long Press Right arrow button
+      - "arrow_left_release" #Release Left arrow button
+      - "arrow_right_release" #Release Right arrow button
+      - "arrow_left_click" #Short Press Left arrow button
+      - "arrow_right_click" #Short Press Right arrow button
+
+
+
+action:
+  - choose:
+      # Short-Press Brightness Up
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "on" }}'
+        sequence:
+          - service: light.turn_on
+            data_template:
+              entity_id: '{{ states.input_select.rotation.state }}'
+      # Short Press Brightness Down 
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "off" }}'
+        sequence:
+          - service: light.turn_off
+            data_template:
+              entity_id: '{{ states.input_select.rotation.state }}'
+      # Long-Press on the dim-up button.
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "brightness_move_up" }}'
+        sequence:
+          - repeat:
+              while: []
+              sequence:
+                - service: light.turn_on
+                  data_template:
+                    entity_id: '{{ states.input_select.rotation.state }}'
+                  data:
+                    brightness_step_pct: 10
+                    transition: "{{ (var_speed / 1000)|float }}"
+                - delay:
+                    milliseconds: !input speed
+                    
+      # Long-Press on the dim-down button.
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "brightness_move_down" }}'
+        sequence:
+          - repeat:
+              while: []
+              sequence:
+                - service: light.turn_on
+                  data_template:
+                    entity_id: '{{ states.input_select.rotation.state }}'
+                  data:
+                    brightness_step_pct: -10
+                    transition: "{{ (var_speed / 1000)|float }}"
+                - delay:
+                    milliseconds: !input speed
+      # Short Press Left Arrow
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "arrow_left_click" }}'
+        sequence:
+          - service: input_select.select_previous
+            data: {}
+            target:
+              entity_id:
+                - input_select.rotation
+      # Short Press Right Arrow
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "arrow_right_click" }}'
+        sequence:
+          - service: input_select.select_next
+            data: {}
+            target:
+              entity_id:
+                - input_select.rotation
+      # Long-Press on the right-arrow button.
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "arrow_right_hold" }}'
+        sequence:
+          - repeat:
+              while: []
+              sequence:
+                - service: light.turn_on
+                  data_template:
+                    entity_id: '{{ states.input_select.rotation.state }}
+                  data:
+                    color_temp: >-
+                      {% if state_attr(var_light, "color_temp") - 25 < 153 %}
+                        {{ 500 }}
+                      {% else %}
+                        {{ state_attr(var_light, "color_temp") - 25 }}
+                      {% endif %}
+                    transition: 0.5
+                - delay:
+                    milliseconds: 500
+      # Long-Press on the left-arrow button.
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "arrow_left_hold" }}'
+        sequence:
+          - repeat:
+              while: []
+              sequence:
+                - service: light.turn_on
+                  data_template:
+                    entity_id: '{{ states.input_select.rotation.state }}
+                  data:
+                    color_temp: >-
+                      {% if state_attr(var_light, "color_temp") + 25 > 500 %}
+                        {{ 500 }}
+                      {% else %}
+                        {{ state_attr(var_light, "color_temp") + 25 }}
+                      {% endif %}
+                    transition: 0.5
+                - delay:
+                    milliseconds: 500
+
+
+    # Any other event will cancel the repeat loops.
+    default: []
+mode: single
