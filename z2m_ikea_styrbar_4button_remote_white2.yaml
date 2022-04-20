@@ -6,8 +6,8 @@
 # Dim-Down	short	Turn off
 # Dim-Up	long	Increase brightness
 # Dim-Down	long	Decrease brightness
-# Right	short/long	Increase temperature
-# Left	short/long	Decrease temperature
+# Right	long	Increase temperature
+# Left	long	Decrease temperature
 
 blueprint:
 
