@@ -1,0 +1,118 @@
+mode: restart
+variables:
+  var_light:
+    entity_id:
+      - light.wohnzimmer_deckenleuchte
+  var_speed: 500
+  var_light_entities:
+    entity_id:
+      - light.wohnzimmer_deckenleuchte
+trigger:
+  - platform: state
+    entity_id: sensor.ikea_fernbedienung_wohnzimmer_action
+    to:
+      - 'on'
+      - 'off'
+      - brightness_move_up
+      - brightness_move_down
+      - brightness_stop
+      - arrow_left_hold
+      - arrow_right_hold
+      - arrow_left_release
+      - arrow_right_release
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "on" }}'
+        sequence:
+          - service: light.turn_on
+            target:
+              entity_id:
+                - light.wohnzimmer_deckenleuchte
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "off" }}'
+        sequence:
+          - service: light.turn_off
+            target:
+              entity_id:
+                - light.wohnzimmer_deckenleuchte
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "brightness_move_up" }}'
+        sequence:
+          - repeat:
+              while: []
+              sequence:
+                - service: light.turn_on
+                  target:
+                    entity_id:
+                      - light.wohnzimmer_deckenleuchte
+                  data:
+                    brightness_step_pct: 10
+                    transition: '{{ (var_speed / 1000)|float }}'
+                - delay:
+                    milliseconds: 500
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "brightness_move_down" }}'
+        sequence:
+          - repeat:
+              while: []
+              sequence:
+                - service: light.turn_on
+                  target:
+                    entity_id:
+                      - light.wohnzimmer_deckenleuchte
+                  data:
+                    brightness_step_pct: -10
+                    transition: '{{ (var_speed / 1000)|float }}'
+                - delay:
+                    milliseconds: 500
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "arrow_right_hold" }}'
+        sequence:
+          - repeat:
+              while: []
+              sequence:
+                - service: light.turn_on
+                  target:
+                    entity_id:
+                      - light.wohnzimmer_deckenleuchte
+                  data:
+                    color_temp: |-
+                      {% if state_attr(var_light, "color_temp") + 18 > 500 %}
+                        {{ 500 }}
+                      {% else %}
+                        {{ state_attr(var_light, "color_temp") + 18 }}
+                      {% endif %}
+                    transition: '{{ (var_speed / 1000)|float }}'
+                - delay:
+                    milliseconds: 500
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.to_state.state == "arrow_left_hold" }}'
+        sequence:
+          - repeat:
+              while: []
+              sequence:
+                - service: light.turn_on
+                  target:
+                    entity_id:
+                      - light.wohnzimmer_deckenleuchte
+                  data:
+                    color_temp: |-
+                      {% if state_attr(var_light, "color_temp") - 18 < 153 %}
+                        {{ 153 }}
+                      {% else %}
+                        {{ state_attr(var_light, "color_temp") - 18 }}
+                      {% endif %}
+                    transition: '{{ (var_speed / 1000)|float }}'
+                - delay:
+                    milliseconds: 500
+    default: []
+id: '1650461074347'
+alias: Neue Automatisierung
+description: ''
