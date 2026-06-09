@@ -1,0 +1,163 @@
+blueprint:
+  name: Z2M - 3-Group Remote (MQTT Fix v5)
+  description: >-
+    Steuert bis zu 3 Lampen/Gruppen basierend auf der action_group.
+    Verhindert das Ausschalten beim Runterdimmen und erlaubt das Einstellen
+    der Übergangsgeschwindigkeit für die Farbtemperatur.
+  domain: automation
+
+  input:
+    mqtt_topic:
+      name: MQTT Topic der Fernbedienung
+      description: "Das Base-Topic exakt wie in Z2M, z.B.: zigbee2mqtt/Neuhaus Fernbedienung E0040007"
+      default: "zigbee2mqtt/Neuhaus Fernbedienung E0040007"
+    light_1:
+      name: Licht / Gruppe 1
+      description: Ziel-Entität für action_group 1
+      selector:
+        entity:
+          domain: light
+      default: ""
+    light_2:
+      name: Licht / Gruppe 2
+      description: Ziel-Entität für action_group 2
+      selector:
+        entity:
+          domain: light
+      default: ""
+    light_3:
+      name: Licht / Gruppe 3
+      description: Ziel-Entität für action_group 3
+      selector:
+        entity:
+          domain: light
+      default: ""
+    speed:
+      name: Dimm-Geschwindigkeit (Helligkeit)
+      description: Verzögerung zwischen den Dimm-Schritten, wenn die Helligkeits-Taste gehalten wird.
+      selector:
+        number:
+          min: 100
+          max: 1000
+          step: 100
+          unit_of_measurement: milliseconds
+          mode: slider
+      default: 500
+    color_speed:
+      name: Übergangszeit (Farbtemperatur)
+      description: Wie langsam und geschmeidig sich die Farbtemperatur anpasst (in Sekunden). Höhere Werte machen es langsamer.
+      selector:
+        number:
+          min: 0.1
+          max: 2.0
+          step: 0.1
+          unit_of_measurement: seconds
+          mode: slider
+      default: 0.5
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: mqtt
+    topic: !input mqtt_topic
+
+variables:
+  var_speed: !input speed
+  var_color_speed: !input color_speed
+  light_1: !input light_1
+  light_2: !input light_2
+  light_3: !input light_3
+  
+  action: '{{ trigger.payload_json.action | default("") }}'
+  group: '{{ trigger.payload_json.action_group | default(0) | int }}'
+  mired_value: '{{ trigger.payload_json.action_color_temperature | default(250) | int }}'
+  
+  target_light: >-
+    {% if group == 1 %}
+      {{ light_1 }}
+    {% elif group == 2 %}
+      {{ light_2 }}
+    {% elif group == 3 %}
+      {{ light_3 }}
+    {% else %}
+      none
+    {% endif %}
+
+condition:
+  - condition: template
+    value_template: '{{ (target_light | trim) != "none" and (target_light | trim) != "" and action != "" }}'
+
+action:
+  - choose:
+      # --- AN / AUS ---
+      - conditions:
+          - condition: template
+            value_template: '{{ action == "on" }}'
+        sequence:
+          - service: light.turn_on
+            target:
+              entity_id: '{{ target_light | trim }}'
+
+      - conditions:
+          - condition: template
+            value_template: '{{ action == "off" }}'
+        sequence:
+          - service: light.turn_off
+            target:
+              entity_id: '{{ target_light | trim }}'
+
+      # --- DIMMEN HOCH ---
+      - conditions:
+          - condition: template
+            value_template: '{{ action == "brightness_move_up" }}'
+        sequence:
+          - repeat:
+              while:
+                - condition: template
+                  value_template: '{{ true }}'
+              sequence:
+                - service: light.turn_on
+                  target:
+                    entity_id: '{{ target_light | trim }}'
+                  data:
+                    brightness_step_pct: 10
+                    transition: '{{ (var_speed / 1000) | float }}'
+                - delay:
+                    milliseconds: !input speed
+
+      # --- DIMMEN RUNTER (Mit Ausschalt-Schutz) ---
+      - conditions:
+          - condition: template
+            value_template: '{{ action == "brightness_move_down" }}'
+        sequence:
+          - repeat:
+              while:
+                # Schleife bricht ab, sobald die Helligkeit den Wert 26 (ca. 10%) unterschreitet
+                - condition: template
+                  value_template: >-
+                    {{ state_attr(target_light | trim, 'brightness') | default(255) | int > 26 }}
+              sequence:
+                - service: light.turn_on
+                  target:
+                    entity_id: '{{ target_light | trim }}'
+                  data:
+                    brightness_step_pct: -10
+                    transition: '{{ (var_speed / 1000) | float }}'
+                - delay:
+                    milliseconds: !input speed
+
+      # --- FARBTEMPERATUR ---
+      - conditions:
+          - condition: template
+            value_template: '{{ action == "color_temperature_move" }}'
+        sequence:
+          - service: light.turn_on
+            target:
+              entity_id: '{{ target_light | trim }}'
+            data:
+              color_temp_kelvin: '{{ (1000000 / mired_value) | int }}'
+              # Nutzt die im UI definierte Übergangszeit für sanftere Wechsel
+              transition: '{{ var_color_speed | float }}'
+
+    default: []
